@@ -1,0 +1,24 @@
+services:
+  # 1. The Backend (Node + SQLite)
+  backend:
+    build: ./backend
+    container_name: societypay_backend
+    restart: unless-stopped
+    volumes:
+      - ./database_data:/app/data
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/app/data/societypay.sqlite
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    # Notice: We removed the "ports" section here. 
+    # It is now safely hidden inside the Docker network!
+
+  # 2. The Frontend (Next.js)
+  frontend:
+    build: ./frontend
+    container_name: societypay_frontend
+    restart: unless-stopped
+    ports:
+      - "80:3000" # This maps the public Port 80 to the Next.js app
+    depends_on:
+      - backend # Ensures the backend starts first

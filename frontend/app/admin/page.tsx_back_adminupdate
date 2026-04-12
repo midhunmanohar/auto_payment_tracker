@@ -1,0 +1,119 @@
+"use client";
+
+import { useState } from "react";
+
+export default function AdminDashboard() {
+  const [password, setPassword] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [error, setError] = useState("");
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    try {
+      const res = await fetch("/api/admin/payments", {
+        headers: { "x-admin-password": password },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPayments(data);
+        setIsAuthenticated(true);
+      } else {
+        setError("Incorrect Password");
+      }
+    } catch (err) {
+      setError("Failed to connect to server.");
+    }
+  };
+
+  const downloadCSV = () => {
+    // 1. Create CSV Headers
+    const headers = ["Flat Number,Month,Year,Maintenance Paid,Water Paid,Water Amount,Method,Date Recorded\n"];
+    
+    // 2. Map data to rows
+    const rows = payments.map(p => {
+      const date = new Date(p.created_at).toLocaleDateString();
+      return `${p.flat_number},${p.payment_month},${p.payment_year},${p.maintenance_paid ? 'Yes' : 'No'},${p.water_paid ? 'Yes' : 'No'},${p.water_amount},${p.payment_method},${date}`;
+    });
+
+    // 3. Trigger download
+    const blob = new Blob([headers.concat(rows).join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `SocietyPay_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <form onSubmit={handleLogin} className="bg-white p-8 rounded-xl shadow border border-gray-100 max-w-sm w-full">
+          <h2 className="text-xl font-bold mb-4 text-gray-800 text-center">Admin Login</h2>
+          <input
+            type="password"
+            placeholder="Enter Admin Password"
+            className="w-full p-3 border rounded-lg mb-4 outline-none text-black"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
+          <button type="submit" className="w-full bg-gray-800 text-white p-3 rounded-lg hover:bg-gray-900 transition">
+            View Dashboard
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-800">Master Ledger</h1>
+          <button 
+            onClick={downloadCSV}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+          >
+            Download CSV
+          </button>
+        </div>
+
+        <div className="bg-white rounded-xl shadow overflow-hidden border border-gray-100">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-100 text-gray-700 text-sm">
+                <th className="p-4 border-b">Flat</th>
+                <th className="p-4 border-b">Month/Year</th>
+                <th className="p-4 border-b">Maintenance</th>
+                <th className="p-4 border-b">Water Bill</th>
+                <th className="p-4 border-b">Method</th>
+                <th className="p-4 border-b">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p, index) => (
+                <tr key={index} className="border-b hover:bg-gray-50 text-gray-800">
+                  <td className="p-4 font-bold">{p.flat_number}</td>
+                  <td className="p-4">{p.payment_month}/{p.payment_year}</td>
+                  <td className="p-4">{p.maintenance_paid ? "✅ ₹2500" : "❌"}</td>
+                  <td className="p-4">{p.water_paid ? `✅ ₹${p.water_amount}` : "❌"}</td>
+                  <td className="p-4 text-sm">{p.payment_method}</td>
+                  <td className="p-4 text-sm text-gray-500">{new Date(p.created_at).toLocaleDateString()}</td>
+                </tr>
+              ))}
+              {payments.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-gray-500">No payments recorded yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

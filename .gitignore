@@ -1,0 +1,17 @@
+# Ignore Database Files
+database_data/
+*.sqlite
+*.db
+
+# Ignore Secrets
+.env
+
+# Ignore Node.js / Next.js Build Files
+node_modules/
+npm-debug.log
+frontend/.next/
+frontend/node_modules/
+backend/node_modules/
+
+# OS generated files
+.DS_Store
