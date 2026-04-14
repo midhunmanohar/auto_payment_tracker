@@ -68,43 +68,37 @@ app.get('/', (req, res) => {
     res.json({ message: "SocietyPay API is running! 🚀" });
 });
 
-// --- UPDATED API ROUTE: Save Payment (Strict Validation) ---
+// --- NEW API ROUTE: Save Payment ---
 app.post('/payments', (req, res) => {
     const { flatNumber, maintenancePaid, waterPaid, waterAmount, paymentMethod } = req.body;
     
-    // NEW LOCK: Prevent empty submissions
-    if (!maintenancePaid && !waterPaid) {
-        return res.status(400).json({ error: "Please mark at least Maintenance or Water Bill as paid." });
-    }
-    
+    // Get current month and year
     const date = new Date();
     const month = date.getMonth() + 1; 
     const year = date.getFullYear();
 
-    // 1. Check if the Flat exists in our official seeded database
-    db.get(`SELECT id FROM flats WHERE flat_number = ?`, [flatNumber], (err, flat) => {
-        if (err) return res.status(500).json({ error: "Database error finding flat" });
+    // 1. Ensure the Flat exists in the database
+    db.run(`INSERT OR IGNORE INTO flats (flat_number) VALUES (?)`, [flatNumber], function(err) {
+        
+        // 2. Get the flat's internal ID
+        db.get(`SELECT id FROM flats WHERE flat_number = ?`, [flatNumber], (err, flat) => {
+            if (!flat) return res.status(500).json({ error: "Database error finding flat" });
 
-        // THE LOCK: If the flat isn't found in the 36 valid flats, reject the submission entirely
-        if (!flat) {
-            return res.status(400).json({ 
-                error: `Invalid Flat Number: ${flatNumber}. Please enter a valid flat (e.g., 001-009, 101-109, etc.).` 
-            });
-        }
-
-        // 2. Attempt to insert the payment record
-        const query = `INSERT INTO payments 
-            (flat_id, payment_month, payment_year, maintenance_paid, water_paid, water_amount, payment_method)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`;
-            
-        db.run(query, [flat.id, month, year, maintenancePaid, waterPaid, waterAmount, paymentMethod], function(err) {
-            if (err) {
-                if (err.message.includes('UNIQUE constraint failed')) {
-                    return res.status(400).json({ error: `Payment already recorded for Flat ${flatNumber} this month.` });
+            // 3. Attempt to insert the payment record
+            const query = `INSERT INTO payments 
+                (flat_id, payment_month, payment_year, maintenance_paid, water_paid, water_amount, payment_method)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`;
+                
+            db.run(query, [flat.id, month, year, maintenancePaid, waterPaid, waterAmount, paymentMethod], function(err) {
+                if (err) {
+                    // This catches the "UNIQUE" lock we set up in the schema!
+                    if (err.message.includes('UNIQUE constraint failed')) {
+                        return res.status(400).json({ error: `Payment already recorded for Flat ${flatNumber} this month.` });
+                    }
+                    return res.status(500).json({ error: "Failed to save payment." });
                 }
-                return res.status(500).json({ error: "Failed to save payment." });
-            }
-            res.json({ message: "✅ Payment successfully recorded!" });
+                res.json({ message: "✅ Payment successfully recorded!" });
+            });
         });
     });
 });
@@ -162,24 +156,6 @@ app.post('/admin/flats/assoc', (req, res) => {
     db.run(`UPDATE flats SET is_assoc_member = ? WHERE flat_number = ?`, [isAssoc ? 1 : 0, flatNumber], (err) => {
         if (err) return res.status(500).json({ error: "Database error." });
         res.json({ message: "Association status updated" });
-    });
-});
-
-app.put('/admin/payments/:id', (req, res) => {
-    if (req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
-
-    const paymentId = req.params.id;
-    const { maintenancePaid, waterPaid, waterAmount, paymentMethod } = req.body;
-
-    const query = `
-        UPDATE payments 
-        SET maintenance_paid = ?, water_paid = ?, water_amount = ?, payment_method = ?
-        WHERE id = ?
-    `;
-
-    db.run(query, [maintenancePaid, waterPaid, waterAmount, paymentMethod, paymentId], function(err) {
-        if (err) return res.status(500).json({ error: "Database error." });
-        res.json({ message: "Payment updated successfully" });
     });
 });
 app.listen(PORT, () => {

@@ -14,6 +14,12 @@ export default function Home() {
     e.preventDefault();
     setStatus({ type: "loading", message: "Saving record..." });
 
+    // NEW LOCK: Frontend Validation
+    if (!maintenancePaid && !waterPaid) {
+      setStatus({ type: "error", message: "Please select at least one payment type." });
+      return;
+    }
+
     try {
       const res = await fetch("/api/payments", {
         method: "POST",
