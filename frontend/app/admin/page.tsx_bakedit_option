@@ -10,15 +10,6 @@ export default function AdminDashboard() {
   const [vacantFlats, setVacantFlats] = useState<any[]>([]);
   const [error, setError] = useState("");
 
-  // NEW: State for the Edit Modal
-  const [editingPayment, setEditingPayment] = useState<any>(null);
-  const [editForm, setEditForm] = useState({
-    maintenancePaid: false,
-    waterPaid: false,
-    waterAmount: 0,
-    paymentMethod: "UPI"
-  });
-
   const fetchFlatsData = async () => {
     const [pendingRes, vacantRes, paymentsRes] = await Promise.all([
       fetch("/api/admin/pending", { headers: { "x-admin-password": password } }),
@@ -53,15 +44,17 @@ export default function AdminDashboard() {
     fetchFlatsData();
   };
 
+  // NEW: Function to permanently toggle the Association Member badge
   const toggleAssocMember = async (flatNumber: string, currentStatus: boolean) => {
     await fetch("/api/admin/flats/assoc", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-password": password },
       body: JSON.stringify({ flatNumber, isAssoc: !currentStatus }),
     });
-    fetchFlatsData();
+    fetchFlatsData(); // Refresh UI to show the highlighted button
   };
 
+  // Reusable button component for the Assoc badge
   const AssocBadge = ({ flat }: { flat: any }) => (
     <button 
       onClick={() => toggleAssocMember(flat.flat_number, flat.is_assoc_member)}
@@ -75,41 +68,6 @@ export default function AdminDashboard() {
       ⭐ Assoc
     </button>
   );
-
-  // NEW: Open the modal and pre-fill data
-  const openEditModal = (payment: any) => {
-    setEditingPayment(payment);
-    setEditForm({
-      maintenancePaid: Boolean(payment.maintenance_paid),
-      waterPaid: Boolean(payment.water_paid),
-      waterAmount: payment.water_amount || 0,
-      paymentMethod: payment.payment_method || "UPI"
-    });
-  };
-
-  // NEW: Save the edited data
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`/api/admin/payments/${editingPayment.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "x-admin-password": password },
-        body: JSON.stringify({
-          ...editForm,
-          waterAmount: editForm.waterPaid ? parseFloat(editForm.waterAmount.toString()) || 0 : 0
-        }),
-      });
-
-      if (res.ok) {
-        setEditingPayment(null); // Close modal
-        fetchFlatsData(); // Refresh table
-      } else {
-        alert("Failed to update payment");
-      }
-    } catch (err) {
-      alert("Network error while saving.");
-    }
-  };
 
   const downloadCSV = () => {
     const headers = ["Flat Number,Month,Year,Maintenance Paid,Water Paid,Water Amount,Method,Date Recorded\n"];
@@ -147,12 +105,12 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 relative">
+    <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto space-y-8">
         
         <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow border border-gray-100">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Society Dashboard</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Association Dashboard</h1>
             <p className="text-gray-500">Current Month Overview</p>
           </div>
           <button onClick={downloadCSV} className="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 transition font-bold shadow-sm">
@@ -165,6 +123,7 @@ export default function AdminDashboard() {
           {/* LEFT COLUMN: Management */}
           <div className="lg:col-span-1 space-y-6">
             
+            {/* Pending Flats Table */}
             <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
               <div className="bg-red-50 p-4 border-b border-red-100">
                 <h2 className="text-lg font-bold text-red-800">Pending This Month</h2>
@@ -193,6 +152,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            {/* Vacant Flats Table */}
             <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
               <div className="bg-gray-100 p-4 border-b border-gray-200">
                 <h2 className="text-lg font-bold text-gray-700">Vacant Flats</h2>
@@ -233,12 +193,12 @@ export default function AdminDashboard() {
                 <thead>
                   <tr className="bg-gray-50 text-gray-700 text-sm">
                     <th className="p-3 border-b">Flat</th>
-                    <th className="p-3 border-b">Date</th>
+                    {/* NEW: Payment Date Column */}
+                    <th className="p-3 border-b">Payment Date</th>
                     <th className="p-3 border-b">Period</th>
                     <th className="p-3 border-b">Maint.</th>
                     <th className="p-3 border-b">Water</th>
                     <th className="p-3 border-b">Method</th>
-                    <th className="p-3 border-b text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -246,113 +206,28 @@ export default function AdminDashboard() {
                     <tr key={index} className="border-b hover:bg-gray-50 text-gray-800">
                       <td className="p-3">
                         <span className="font-bold">{p.flat_number}</span>
+                        <AssocBadge flat={p} />
                       </td>
+                      {/* NEW: Render actual date and time visually */}
                       <td className="p-3 text-sm text-gray-600">
-                        {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                        {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </td>
                       <td className="p-3 text-sm">{p.payment_month}/{p.payment_year}</td>
                       <td className="p-3">{p.maintenance_paid ? "✅" : "❌"}</td>
                       <td className="p-3">{p.water_paid ? <span className="text-green-600 font-medium">₹{p.water_amount}</span> : "❌"}</td>
                       <td className="p-3 text-sm">{p.payment_method}</td>
-                      <td className="p-3 text-center">
-                        <button 
-                          onClick={() => openEditModal(p)}
-                          className="text-blue-600 hover:text-blue-800 font-medium text-sm transition"
-                        >
-                          Edit
-                        </button>
-                      </td>
                     </tr>
                   ))}
                   {payments.length === 0 && (
-                    <tr><td colSpan={7} className="p-8 text-center text-gray-500">No payments recorded yet.</td></tr>
+                    <tr><td colSpan={6} className="p-8 text-center text-gray-500">No payments recorded yet.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </div>
+
         </div>
       </div>
-
-      {/* NEW: Edit Payment Modal Overlay */}
-      {editingPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md border border-gray-100">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-800">
-                Edit Flat {editingPayment.flat_number}
-              </h2>
-              <button onClick={() => setEditingPayment(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">
-                &times;
-              </button>
-            </div>
-            
-            <p className="text-sm text-gray-500 mb-6">
-              Editing record for Period: {editingPayment.payment_month}/{editingPayment.payment_year}
-            </p>
-
-            <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div className="flex items-center p-3 bg-gray-50 rounded border border-gray-200">
-                <input
-                  type="checkbox"
-                  id="editMaint"
-                  className="w-5 h-5 text-blue-600 rounded"
-                  checked={editForm.maintenancePaid}
-                  onChange={(e) => setEditForm({ ...editForm, maintenancePaid: e.target.checked })}
-                />
-                <label htmlFor="editMaint" className="ml-3 font-medium text-gray-800">Maintenance Paid</label>
-              </div>
-
-              <div className="p-3 bg-gray-50 rounded border border-gray-200 space-y-3">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="editWater"
-                    className="w-5 h-5 text-blue-600 rounded"
-                    checked={editForm.waterPaid}
-                    onChange={(e) => setEditForm({ ...editForm, waterPaid: e.target.checked })}
-                  />
-                  <label htmlFor="editWater" className="ml-3 font-medium text-gray-800">Water Bill Paid</label>
-                </div>
-                {editForm.waterPaid && (
-                  <div className="pl-8">
-                    <input
-                      type="number"
-                      required
-                      placeholder="Amount (₹)"
-                      className="w-full p-2 border border-gray-300 rounded outline-none text-black"
-                      value={editForm.waterAmount}
-                      onChange={(e) => setEditForm({ ...editForm, waterAmount: Number(e.target.value) })}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                <select
-                  className="w-full p-2 border border-gray-300 rounded outline-none text-black"
-                  value={editForm.paymentMethod}
-                  onChange={(e) => setEditForm({ ...editForm, paymentMethod: e.target.value })}
-                >
-                  <option value="UPI">UPI</option>
-                  <option value="Bank Transfer (ICICI)">Bank Transfer (ICICI)</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <button type="button" onClick={() => setEditingPayment(null)} className="flex-1 bg-gray-200 text-gray-800 py-2 rounded font-bold hover:bg-gray-300 transition">
-                  Cancel
-                </button>
-                <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 transition">
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
