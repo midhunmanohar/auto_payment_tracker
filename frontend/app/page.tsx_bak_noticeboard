@@ -1,32 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
+import { useState } from "react";
 
 export default function Home() {
-  const [announcement, setAnnouncement] = useState("");
   const [flatNumber, setFlatNumber] = useState("");
   const [maintenancePaid, setMaintenancePaid] = useState(false);
   const [waterPaid, setWaterPaid] = useState(false);
   const [waterAmount, setWaterAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("UPI");
   const [status, setStatus] = useState({ type: "", message: "" });
-
-  useEffect(() => {
-    // We add a timestamp to the URL so the browser is FORCED to bypass its cache
-    fetch(`/api/announcement?t=${new Date().getTime()}`)
-      .then(res => res.json())
-      .then(data => {
-        console.log("Notice Data Received:", data); // Helps us debug if needed
-        if (data && data.announcement) {
-          setAnnouncement(data.announcement);
-        } else {
-          setAnnouncement(""); // Safe fallback
-        }
-      })
-      .catch(err => console.error("Failed to fetch notice:", err));
-  }, []);
-
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,19 +56,6 @@ export default function Home() {
              Monthly Maintenance and Water Bill Tracker
           </p>
           </div>
-        
-         {/* NEW: Public Notice Board */}
-         {announcement && announcement.trim() !== "" && (
-          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg shadow-sm">
-            <div className="flex items-start">
-              <span className="text-xl mr-3">📢</span>
-              <div>
-                <h3 className="font-bold text-yellow-800 text-sm mb-1">Society Notice Board</h3>
-                <p className="text-yellow-900 text-sm whitespace-pre-wrap">{announcement}</p>
-              </div>
-            </div>
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Flat Number */}

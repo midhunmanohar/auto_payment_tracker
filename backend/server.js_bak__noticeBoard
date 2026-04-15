@@ -39,11 +39,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 UNIQUE(flat_id, payment_month, payment_year),
                 FOREIGN KEY (flat_id) REFERENCES flats (id)
             );
-            -- NEW: Settings table for global app variables
-            CREATE TABLE IF NOT EXISTS settings (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                announcement TEXT DEFAULT ''
-            );
         `, () => {
             // DATABASE UPGRADE: Safely add the new column if it doesn't exist yet
             db.run("ALTER TABLE flats ADD COLUMN is_assoc_member BOOLEAN DEFAULT 0", (err) => {
@@ -185,26 +180,6 @@ app.put('/admin/payments/:id', (req, res) => {
     db.run(query, [maintenancePaid, waterPaid, waterAmount, paymentMethod, paymentId], function(err) {
         if (err) return res.status(500).json({ error: "Database error." });
         res.json({ message: "Payment updated successfully" });
-    });
-});
-
-// --- NEW API ROUTES: Global Announcement ---
-
-// PUBLIC: For the resident frontend to fetch the notice
-app.get('/announcement', (req, res) => {
-    db.get(`SELECT announcement FROM settings WHERE id = 1`, [], (err, row) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json({ announcement: row ? row.announcement : "" });
-    });
-});
-
-// PROTECTED: For the Admin to update the notice
-app.post('/admin/announcement', (req, res) => {
-    if (req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
-    const { announcement } = req.body;
-    db.run(`UPDATE settings SET announcement = ? WHERE id = 1`, [announcement], (err) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json({ message: "Announcement updated!" });
     });
 });
 app.listen(PORT, () => {
