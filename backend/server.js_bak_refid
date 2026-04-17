@@ -104,29 +104,12 @@ app.post('/payments', (req, res) => {
             
         db.run(query, [flat.id, month, year, maintenancePaid, waterPaid, waterAmount, paymentMethod], function(err) {
             if (err) {
-                // NEW: Smart Recovery - If they already paid, look up their existing record and give them the ID back
                 if (err.message.includes('UNIQUE constraint failed')) {
-                    db.get(`SELECT id FROM payments WHERE flat_id = ? AND payment_month = ? AND payment_year = ?`, 
-                    [flat.id, month, year], (lookupErr, existingPayment) => {
-                        if (lookupErr || !existingPayment) {
-                            return res.status(400).json({ error: `Payment already recorded for Flat ${flatNumber} this month.` });
-                        }
-                        const monthStr = month.toString().padStart(2, '0');
-                        const receiptId = `TXN-${year}${monthStr}-${existingPayment.id}`;
-                        return res.status(400).json({ 
-                            error: `Flat ${flatNumber} already paid this month. Reference ID: ${receiptId}` 
-                        });
-                    });
-                    return; // Stop execution here so we don't send multiple responses
+                    return res.status(400).json({ error: `Payment already recorded for Flat ${flatNumber} this month.` });
                 }
                 return res.status(500).json({ error: "Failed to save payment." });
             }
-            
-            // Generate the Reference ID for a successful new payment
-            const monthStr = month.toString().padStart(2, '0');
-            const receiptId = `TXN-${year}${monthStr}-${this.lastID}`;
-            
-            res.json({ message: `✅ Payment recorded! Reference ID: ${receiptId}` });
+            res.json({ message: "✅ Payment successfully recorded!" });
         });
     });
 });

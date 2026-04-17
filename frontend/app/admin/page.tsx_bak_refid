@@ -267,7 +267,6 @@ export default function AdminDashboard() {
                 <thead>
                   <tr className="bg-gray-50 text-gray-700 text-sm">
                     <th className="p-3 border-b">Flat</th>
-                    <th className="p-3 border-b">Ref ID</th> {/* NEW HEADER */}
                     <th className="p-3 border-b">Date</th>
                     <th className="p-3 border-b">Period</th>
                     <th className="p-3 border-b">Maint.</th>
@@ -281,10 +280,6 @@ export default function AdminDashboard() {
                     <tr key={index} className="border-b hover:bg-gray-50 text-gray-800">
                       <td className="p-3">
                         <span className="font-bold">{p.flat_number}</span>
-                      </td>
-                      {/* NEW: Format the Reference ID exactly how the resident sees it */}
-                      <td className="p-3 text-xs font-mono text-gray-500">
-                        TXN-{p.payment_year}{String(p.payment_month).padStart(2, '0')}-{p.id}
                       </td>
                       <td className="p-3 text-sm text-gray-600">
                         {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
@@ -304,7 +299,7 @@ export default function AdminDashboard() {
                     </tr>
                   ))}
                   {payments.length === 0 && (
-                    <tr><td colSpan={8} className="p-8 text-center text-gray-500">No payments recorded yet.</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-gray-500">No payments recorded yet.</td></tr>
                   )}
                 </tbody>
               </table>
