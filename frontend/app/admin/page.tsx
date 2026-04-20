@@ -374,8 +374,8 @@ export default function AdminDashboard() {
                   value={editForm.paymentMethod}
                   onChange={(e) => setEditForm({ ...editForm, paymentMethod: e.target.value })}
                 >
-                  <option value="UPI">UPI</option>
-                  <option value="Bank Transfer (ICICI)">Bank Transfer (ICICI)</option>
+                  <option value="UPI (Assoc Acc)">UPI (Assoc Acc)</option>
+                  <option value="Bank Transfer (Assoc Acc)">Bank Transfer (Assoc Acc)</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
