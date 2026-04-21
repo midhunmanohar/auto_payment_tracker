@@ -16,7 +16,7 @@ export default function AdminDashboard() {
     maintenancePaid: false,
     waterPaid: false,
     waterAmount: 0,
-    paymentMethod: "UPI"
+    paymentMethod: "UPI (Assoc Acc)"
   });
   const [announcement, setAnnouncement] = useState("");
   const fetchFlatsData = async () => {
@@ -97,7 +97,7 @@ export default function AdminDashboard() {
       maintenancePaid: Boolean(payment.maintenance_paid),
       waterPaid: Boolean(payment.water_paid),
       waterAmount: payment.water_amount || 0,
-      paymentMethod: payment.payment_method || "UPI"
+      paymentMethod: payment.payment_method || "UPI (Assoc Acc)"
     });
   };
 

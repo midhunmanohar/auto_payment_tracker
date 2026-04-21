@@ -9,7 +9,7 @@ export default function Home() {
   const [maintenancePaid, setMaintenancePaid] = useState(false);
   const [waterPaid, setWaterPaid] = useState(false);
   const [waterAmount, setWaterAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("UPI");
+  const [paymentMethod, setPaymentMethod] = useState("UPI (Assoc Acc)");
   const [status, setStatus] = useState({ type: "", message: "" });
 
   useEffect(() => {
@@ -153,8 +153,8 @@ export default function Home() {
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
             >
-              <option value="UPI">UPI</option>
-              <option value="Bank Transfer (ICICI)">Bank Transfer (ICICI)</option>
+              <option value="UPI (Assoc Acc)">UPI (Assoc Acc)</option>
+              <option value="Bank Transfer (Assoc Acc)">Bank Transfer (Assoc Acc)</option>
               <option value="Other">Other</option>
             </select>
           </div>

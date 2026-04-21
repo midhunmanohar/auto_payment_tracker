@@ -33,7 +33,9 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 maintenance_paid BOOLEAN DEFAULT 0,
                 water_paid BOOLEAN DEFAULT 0,
                 water_amount REAL DEFAULT 0.0,
-                payment_method TEXT CHECK(payment_method IN ('UPI', 'Bank Transfer (ICICI)', 'Other')),
+                payment_method TEXT CHECK(payment_method IN ('UPI', 'Bank Transfer (ICICI)', 'Other','UPI (Assoc Acc)','Bank Transfer (Assoc Acc)')),
+//UPI (Assoc Acc)
+//Bank Transfer (Assoc Acc)
                 paid_by TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(flat_id, payment_month, payment_year),
