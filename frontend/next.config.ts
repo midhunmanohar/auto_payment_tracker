@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://societypay_backend:3000/:path*', 
+        destination: 'http://backend:3000/:path*', 
       },
     ]
   },

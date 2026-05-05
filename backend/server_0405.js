@@ -4,31 +4,6 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const multer = require('multer');
-const fs = require('fs');
-
-// Create a 'receipts' folder safely inside your persistent data directory
-const receiptsDir = path.join(__dirname, 'data', 'receipts');
-if (!fs.existsSync(receiptsDir)){
-    fs.mkdirSync(receiptsDir, { recursive: true });
-}
-
-// Teach multer how to save the files (Naming them: FlatNumber-Timestamp.jpg)
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, receiptsDir);
-    },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname) || '.jpg';
-        cb(null, req.body.flatNumber + '-' + uniqueSuffix + ext);
-    }
-});
-const upload = multer({ storage: storage });
-
-// Allow the frontend to view these saved images later
-app.use('/receipts', express.static(receiptsDir));
-
 const PORT = process.env.PORT || 3000;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'societypay.sqlite');
 
@@ -49,7 +24,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 flat_number TEXT UNIQUE NOT NULL,
                 status TEXT DEFAULT 'Occupied'
             );
-
+            
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 flat_id INTEGER NOT NULL,
@@ -59,42 +34,23 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
                 water_paid BOOLEAN DEFAULT 0,
                 water_amount REAL DEFAULT 0.0,
                 payment_method TEXT CHECK(payment_method IN ('UPI', 'Bank Transfer (ICICI)', 'Other','UPI (Assoc Acc)','Bank Transfer (Assoc Acc)')),
+//UPI (Assoc Acc)
+//Bank Transfer (Assoc Acc)
                 paid_by TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(flat_id, payment_month, payment_year),
                 FOREIGN KEY (flat_id) REFERENCES flats (id)
             );
-
+            -- NEW: Settings table for global app variables
             CREATE TABLE IF NOT EXISTS settings (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 announcement TEXT DEFAULT ''
             );
-
-            -- NEW: The True Billing Ledger
-            CREATE TABLE IF NOT EXISTS monthly_bills (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                flat_id INTEGER NOT NULL,
-                billing_month INTEGER NOT NULL,
-                billing_year INTEGER NOT NULL,
-                maintenance_due REAL DEFAULT 2500,
-                water_due REAL DEFAULT 0.0,
-                total_due REAL DEFAULT 0.0,
-                status TEXT DEFAULT 'Pending', 
-                receipt_image_path TEXT,
-                phone_number TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(flat_id, billing_month, billing_year),
-                FOREIGN KEY (flat_id) REFERENCES flats (id)
-            );
         `, () => {
-            // DATABASE UPGRADES: Safely add new columns if they don't exist
-            db.run("ALTER TABLE flats ADD COLUMN is_assoc_member BOOLEAN DEFAULT 0", () => {});
-            
-            // NEW: Add the maintenance fee setting to the existing table
-            db.run("ALTER TABLE settings ADD COLUMN base_maintenance_fee REAL DEFAULT 2500", () => {});
-
-            // NEW: Ensure the settings row actually exists so we can update it later
-            db.run("INSERT OR IGNORE INTO settings (id, announcement, base_maintenance_fee) VALUES (1, '', 2500)");
+            // DATABASE UPGRADE: Safely add the new column if it doesn't exist yet
+            db.run("ALTER TABLE flats ADD COLUMN is_assoc_member BOOLEAN DEFAULT 0", (err) => {
+                // We ignore the error here because it just means the column already exists!
+            });
 
             // AUTO-SEEDER
             const flatsToSeed = [];
@@ -270,151 +226,6 @@ app.post('/admin/announcement', (req, res) => {
         res.json({ message: "Announcement updated!" });
     });
 });
-// ==========================================
-// --- NEW: TRUE BILLING SYSTEM API ROUTES ---
-// ==========================================
-
-// 1. Get Global Settings (Maintenance Fee)
-app.get('/admin/settings', (req, res) => {
-    if (req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
-    db.get(`SELECT base_maintenance_fee FROM settings WHERE id = 1`, [], (err, row) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json(row || { base_maintenance_fee: 2500 });
-    });
-});
-
-// 2. Update Global Settings
-app.post('/admin/settings', (req, res) => {
-    if (req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
-    const { base_maintenance_fee } = req.body;
-    db.run(`UPDATE settings SET base_maintenance_fee = ? WHERE id = 1`, [base_maintenance_fee], (err) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json({ message: "Settings updated successfully!" });
-    });
-});
-
-// 3. Generate Monthly Bills (The "Magic" Button)
-app.post('/admin/generate-bills', (req, res) => {
-    if (req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
-    const { month, year } = req.body;
-
-    // First, get the current maintenance fee from settings
-    db.get(`SELECT base_maintenance_fee FROM settings WHERE id = 1`, [], (err, setting) => {
-        const fee = setting ? setting.base_maintenance_fee : 2500;
-
-        // Next, get all occupied flats
-        db.all(`SELECT id FROM flats WHERE status = 'Occupied'`, [], (err, flats) => {
-            if (err) return res.status(500).json({ error: "Error fetching flats" });
-
-            // Insert a blank bill for every occupied flat IF one doesn't already exist
-            // (The UNIQUE constraint in the DB prevents duplicate bills from being created)
-            const stmt = db.prepare(`
-                INSERT OR IGNORE INTO monthly_bills 
-                (flat_id, billing_month, billing_year, maintenance_due, total_due) 
-                VALUES (?, ?, ?, ?, ?)
-            `);
-            
-            flats.forEach(flat => {
-                stmt.run([flat.id, month, year, fee, fee]); // Total starts as just the maintenance fee
-            });
-            
-            stmt.finalize(() => {
-                res.json({ message: `Successfully generated bills for ${month}/${year}` });
-            });
-        });
-    });
-});
-
-// 4. Fetch Bills for a Specific Month
-app.get('/admin/monthly-bills', (req, res) => {
-    const { month, year } = req.query;
-    db.all(`
-        SELECT b.*, f.flat_number, f.is_vacant 
-        FROM monthly_bills b
-        JOIN flats f ON b.flat_id = f.id
-        WHERE b.billing_month = ? AND b.billing_year = ?
-        ORDER BY f.flat_number ASC
-    `, [month, year], (err, rows) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json(rows);
-    });
-});
-
-// 5. Update a Specific Bill (Adding Water Amount)
-app.put('/admin/monthly-bills/:id', (req, res) => {
-    if (req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
-    
-    const billId = req.params.id;
-    const { water_due, total_due } = req.body;
-    
-    db.run(`UPDATE monthly_bills SET water_due = ?, total_due = ? WHERE id = ?`, 
-        [water_due, total_due, billId], 
-        function(err) {
-            if (err) return res.status(500).json({ error: "Database error" });
-            res.json({ message: "Bill updated successfully" });
-        }
-    );
-});
-
-// Toggle Vacancy Status for a Flat
-app.put('/admin/flats/:flatNumber/vacancy', (req, res) => {
-    const { is_vacant } = req.body;
-    db.run(`UPDATE flats SET is_vacant = ? WHERE flat_number = ?`, [is_vacant ? 1 : 0, req.params.flatNumber], function(err) {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json({ message: "Vacancy updated" });
-    });
-});
-// ==========================================
-// --- NEW: RESIDENT BILLING API ROUTES ---
-// ==========================================
-
-// 1. Fetch a flat's bill for the current month
-app.get('/resident/bill/:flat', (req, res) => {
-    const flatNumber = req.params.flat;
-    const date = new Date();
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
-
-    // Step 1: Safely find the Flat ID first (No JOINs!)
-    db.get(`SELECT id, flat_number FROM flats WHERE flat_number = ?`, [flatNumber], (err, flat) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        if (!flat) return res.status(404).json({ error: "Invalid Flat Number" });
-
-        // Step 2: Use db.all to fetch the bill to avoid the sqlite3 memory crash
-        db.all(`
-            SELECT * FROM monthly_bills 
-            WHERE flat_id = ? AND billing_month = ? AND billing_year = ?
-        `, [flat.id, month, year], (err, rows) => {
-            if (err) return res.status(500).json({ error: "Database error" });
-            
-            const bill = rows.length > 0 ? rows[0] : null;
-            if (!bill) return res.status(404).json({ error: "No bill generated for this month yet. Please check back later." });
-            
-            // Attach the flat number so the frontend can display it cleanly
-            bill.flat_number = flat.flat_number;
-            res.json(bill);
-        });
-    });
-});
-
-// 2. Submit payment screenshot and phone number
-app.post('/resident/pay', upload.single('receipt'), (req, res) => {
-    const { billId, flatNumber, phoneNumber } = req.body;
-    
-    // Check if the image successfully saved
-    const receiptPath = req.file ? '/receipts/' + req.file.filename : null;
-    if (!receiptPath) return res.status(400).json({ error: "Receipt screenshot is required." });
-
-    db.run(`
-        UPDATE monthly_bills 
-        SET status = 'Paid', phone_number = ?, receipt_image_path = ? 
-        WHERE id = ?
-    `, [phoneNumber, receiptPath, billId], function(err) {
-        if (err) return res.status(500).json({ error: "Database error" });
-        res.json({ message: "✅ Payment submitted successfully! The Admin will review your receipt." });
-    });
-});
-
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });

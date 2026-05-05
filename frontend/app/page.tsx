@@ -1,183 +1,198 @@
 "use client";
+import { useState } from "react";
 
-import { useState, useEffect } from "react";
+export default function ResidentPortal() {
+    const [flatNumber, setFlatNumber] = useState("");
+    const [bill, setBill] = useState<any>(null);
+    const [phoneNumber, setPhoneNumber] = useState("");
+    const [receipt, setReceipt] = useState<File | null>(null);
+    
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
 
+    const fetchBill = async (e: any) => {
+        e.preventDefault();
+        setError("");
+        setSuccess("");
+        setLoading(true);
 
-export default function Home() {
-  const [announcement, setAnnouncement] = useState("");
-  const [flatNumber, setFlatNumber] = useState("");
-  const [maintenancePaid, setMaintenancePaid] = useState(false);
-  const [waterPaid, setWaterPaid] = useState(false);
-  const [waterAmount, setWaterAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("UPI (Assoc Acc)");
-  const [status, setStatus] = useState({ type: "", message: "" });
+        try {
+            const res = await fetch(`/api/resident/bill/${flatNumber}`);
+            const data = await res.json();
 
-  useEffect(() => {
-    // We add a timestamp to the URL so the browser is FORCED to bypass its cache
-    fetch(`/api/announcement?t=${new Date().getTime()}`)
-      .then(res => res.json())
-      .then(data => {
-        console.log("Notice Data Received:", data); // Helps us debug if needed
-        if (data && data.announcement) {
-          setAnnouncement(data.announcement);
-        } else {
-          setAnnouncement(""); // Safe fallback
+            if (res.ok) {
+                setBill(data);
+            } else {
+                setError(data.error);
+                setBill(null);
+            }
+        } catch (err) {
+            setError("Failed to connect to the server.");
         }
-      })
-      .catch(err => console.error("Failed to fetch notice:", err));
-  }, []);
+        setLoading(false);
+    };
 
+    const submitPayment = async (e: any) => {
+        e.preventDefault();
+        if (!receipt) {
+            setError("Please attach a screenshot of your payment receipt.");
+            return;
+        }
+        if (!phoneNumber) {
+            setError("Please enter your phone number.");
+            return;
+        }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus({ type: "loading", message: "Saving record..." });
+        setLoading(true);
+        setError("");
 
-    // NEW LOCK: Frontend Validation
-    if (!maintenancePaid && !waterPaid) {
-      setStatus({ type: "error", message: "Please select at least one payment type." });
-      return;
-    }
+        const formData = new FormData();
+        formData.append('billId', bill.id);
+        formData.append('flatNumber', flatNumber);
+        formData.append('phoneNumber', phoneNumber);
+        formData.append('receipt', receipt); 
 
-    try {
-      const res = await fetch("/api/payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          flatNumber,
-          maintenancePaid,
-          waterPaid,
-          waterAmount: waterPaid ? parseFloat(waterAmount) || 0 : 0,
-          paymentMethod,
-        }),
-      });
+        try {
+            const res = await fetch('/api/resident/pay', {
+                method: 'POST',
+                body: formData 
+            });
+            const data = await res.json();
 
-      const data = await res.json();
-      if (res.ok) {
-        setStatus({ type: "success", message: data.message });
-        // Optional: clear form fields here
-      } else {
-        setStatus({ type: "error", message: data.error });
-      }
-    } catch (error) {
-      setStatus({ type: "error", message: "Network error. Try again." });
-    }
-  };
+            if (res.ok) {
+                setSuccess(data.message);
+                setBill(null); 
+                setFlatNumber(""); 
+                setReceipt(null); // Clear the image
+                setPhoneNumber(""); // Clear the phone
+            } else {
+                setError(data.error);
+            }
+        } catch (err) {
+            setError("Failed to submit payment.");
+        }
+        setLoading(false);
+    };
 
-  return (
-    <main className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full border border-gray-100">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">
-             Sri Venkatadri Castle
-          </h1>
-          <p className="text-sm font-medium text-gray-500">
-             Monthly Maintenance and Water Bill Tracker
-          </p>
-          </div>
-        
-         {/* NEW: Public Notice Board */}
-         {announcement && announcement.trim() !== "" && (
-          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg shadow-sm">
-            <div className="flex items-start">
-              <span className="text-xl mr-3">📢</span>
-              <div>
-                <h3 className="font-bold text-yellow-800 text-sm mb-1">Society Notice Board</h3>
-                <p className="text-yellow-900 text-sm whitespace-pre-wrap">{announcement}</p>
-              </div>
+    return (
+        <div className="min-h-screen bg-gray-50 flex flex-col items-center py-12 px-4 text-black">
+            <div className="max-w-md w-full bg-white rounded-xl shadow-lg border p-8">
+                
+                <h1 className="text-2xl font-bold text-center mb-2">Sri Venkatadri Castle</h1>
+                <p className="text-gray-500 text-center mb-8">Maintenance & Water Billing</p>
+
+                {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">{error}</div>}
+                {success && <div className="bg-green-100 border border-green-400 text-green-800 px-4 py-3 rounded mb-6 font-bold text-center">{success}</div>}
+
+                {/* STEP 1: Flat Lookup */}
+                {!bill && !success && (
+                    <form onSubmit={fetchBill} className="flex flex-col gap-4">
+                        <label className="font-semibold text-gray-700">Enter Your Flat Number:</label>
+                        <input 
+                            type="text" 
+                            placeholder="e.g. 304" 
+                            value={flatNumber} 
+                            onChange={(e) => setFlatNumber(e.target.value)}
+                            className="border p-3 rounded-lg text-lg text-center bg-white"
+                            required
+                        />
+                        <button type="submit" disabled={loading} className="bg-blue-600 text-white font-bold p-3 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                            {loading ? "Searching..." : "Find My Bill"}
+                        </button>
+                    </form>
+                )}
+
+                {/* STEP 2: Bill Display & Actions */}
+                {bill && (
+                    <div className="flex flex-col gap-6">
+                        
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <h2 className="font-bold text-lg mb-4 text-blue-900 border-b border-blue-200 pb-2">
+                                Invoice: Flat {bill.flat_number} (Month {bill.billing_month}/{bill.billing_year})
+                            </h2>
+                            <div className="flex justify-between mb-2">
+                                <span className="text-gray-600">Maintenance:</span>
+                                <span className="font-semibold">₹{bill.maintenance_due}</span>
+                            </div>
+                            <div className="flex justify-between mb-2">
+                                <span className="text-gray-600">Water Bill:</span>
+                                <span className="font-semibold">₹{bill.water_due}</span>
+                            </div>
+                            <div className="flex justify-between mt-4 pt-2 border-t border-blue-200 text-xl">
+                                <span className="font-bold text-black">Total Due:</span>
+                                <span className="font-bold text-blue-700">₹{bill.total_due}</span>
+                            </div>
+                        </div>
+
+                        {/* NEW: Check if already paid to lock the form */}
+                        {bill.status === 'Paid' ? (
+                            <div className="bg-green-50 p-6 rounded-lg text-center border border-green-200">
+                                <h3 className="text-xl font-bold text-green-800 mb-2">✅ Already Paid</h3>
+                                <p className="text-green-700 text-sm">You have already submitted the payment receipt for this month. Thank you!</p>
+                                <button onClick={() => setBill(null)} className="mt-4 text-sm text-gray-500 hover:underline">
+                                    Search Another Flat
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                {/* UPDATED: Payment Instructions */}
+                                <div className="p-4 bg-gray-100 rounded-lg border">
+                                    <p className="font-bold text-center text-gray-800 mb-3 border-b pb-2">Pay via UPI or Account Transfer</p>
+                                    <div className="text-sm text-gray-700 space-y-1">
+                                        <p><span className="font-semibold w-24 inline-block">UPI ID:</span> MSSRIVENKATADRICASTLEASSOCIATION.eazypay@icici</p>
+                                        <p><span className="font-semibold w-24 inline-block">A/C Number:</span> 722605000718</p>
+                                        <p><span className="font-semibold w-24 inline-block">IFSC Code:</span> ICIC0007226</p>
+                                        <p><span className="font-semibold w-24 inline-block">Bank:</span> ICICI Bank</p>
+                                    </div>
+                                </div>
+
+                                <form onSubmit={submitPayment} className="flex flex-col gap-4 border-t pt-4">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Your Phone Number:</label>
+                                        <input 
+                                            type="tel" 
+                                            value={phoneNumber}
+                                            onChange={(e) => setPhoneNumber(e.target.value)}
+                                            className="w-full border p-3 rounded-lg bg-white"
+                                            required
+                                        />
+                                    </div>
+
+                                    {/* UPDATED: Custom File Upload UI */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Upload Payment Screenshot:</label>
+                                        <div className="relative">
+                                            <input 
+                                                type="file" 
+                                                accept="image/*"
+                                                onChange={(e) => setReceipt(e.target.files ? e.target.files[0] : null)}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                required
+                                            />
+                                            <div className={`w-full border-2 border-dashed p-4 rounded-lg text-center transition-colors ${receipt ? 'bg-blue-50 border-blue-400' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
+                                                {receipt ? (
+                                                    <span className="font-bold text-blue-700 break-all">📄 {receipt.name}</span>
+                                                ) : (
+                                                    <span className="text-gray-500 font-medium">Tap here to select an image</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" disabled={loading} className="w-full bg-green-600 text-white font-bold p-3 rounded-lg hover:bg-green-700 disabled:opacity-50 mt-2">
+                                        {loading ? "Uploading..." : "Submit Payment Proof"}
+                                    </button>
+                                    
+                                    <button type="button" onClick={() => setBill(null)} className="text-gray-500 text-sm hover:underline mt-2">
+                                        Cancel & Go Back
+                                    </button>
+                                </form>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Flat Number */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Flat Number</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. 304"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-black"
-              value={flatNumber}
-              onChange={(e) => setFlatNumber(e.target.value)}
-            />
-          </div>
-
-          {/* Maintenance Fee */}
-          <div className="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <input
-              type="checkbox"
-              id="maint"
-              className="w-5 h-5 text-blue-600 rounded"
-              checked={maintenancePaid}
-              onChange={(e) => setMaintenancePaid(e.target.checked)}
-            />
-            <label htmlFor="maint" className="ml-3 font-medium text-gray-800">
-              Maintenance Paid (₹2500)
-            </label>
-          </div>
-
-          {/* Water Bill */}
-          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="water"
-                className="w-5 h-5 text-blue-600 rounded"
-                checked={waterPaid}
-                onChange={(e) => setWaterPaid(e.target.checked)}
-              />
-              <label htmlFor="water" className="ml-3 font-medium text-gray-800">
-                Water Bill Paid
-              </label>
-            </div>
-            
-            {waterPaid && (
-              <div className="pl-8 mt-2">
-                <input
-                  type="number"
-                  required
-                  placeholder="Amount (₹)"
-                  className="w-full p-2 border border-gray-300 rounded outline-none text-black"
-                  value={waterAmount}
-                  onChange={(e) => setWaterAmount(e.target.value)}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Payment Method */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-            <select
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-black"
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-            >
-              <option value="UPI (Assoc Acc)">UPI (Assoc Acc)</option>
-              <option value="Bank Transfer (Assoc Acc)">Bank Transfer (Assoc Acc)</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          {/* Status Message */}
-          {status.message && (
-            <div className={`p-3 rounded-lg text-sm ${
-              status.type === 'success' ? 'bg-green-100 text-green-800' : 
-              status.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
-            }`}>
-              {status.message}
-            </div>
-          )}
-
-          {/* Submit */}
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition"
-          >
-            Record Payment
-          </button>
-        </form>
-      </div>
-    </main>
-  );
+        </div>
+    );
 }
