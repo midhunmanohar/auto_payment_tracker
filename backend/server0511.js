@@ -7,37 +7,6 @@ const app = express();
 const multer = require('multer');
 const fs = require('fs');
 
-const cron = require('node-cron');
-
-// ==========================================
-// --- TELEGRAM BOT CONFIGURATION ---
-// ==========================================
-const TELEGRAM_BOT_TOKEN = '8728072022:AAHfRYizn_M4Du_C5YOv_WMjGUza60FiCy8'; 
-const TELEGRAM_CHAT_ID = '-1003938639931'; // e.g., -1001234567890
-
-async function sendTelegramMessage(message) {
-    if (!TELEGRAM_BOT_TOKEN) return;
-    try {
-        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-//        console.log("Attempting to send Telegram message to:", TELEGRAM_CHAT_ID);
-        
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: TELEGRAM_CHAT_ID,
-                text: message,
-                parse_mode: 'HTML'
-            })
-        });
-        
-        const data = await res.json();
-//        console.log("TELEGRAM RESPONSE:", data); // This is the golden ticket!
-    } catch (err) {
-        console.error("TELEGRAM CRASH:", err);
-    }
-}
-
 // Create a 'receipts' folder safely inside your persistent data directory
 const receiptsDir = path.join(__dirname, 'data', 'receipts');
 if (!fs.existsSync(receiptsDir)){
@@ -432,6 +401,7 @@ app.get('/resident/bill/:flat', (req, res) => {
 app.post('/resident/pay', upload.single('receipt'), (req, res) => {
     const { billId, flatNumber, phoneNumber } = req.body;
     
+    // Check if the image successfully saved
     const receiptPath = req.file ? '/receipts/' + req.file.filename : null;
     if (!receiptPath) return res.status(400).json({ error: "Receipt screenshot is required." });
 
@@ -441,49 +411,8 @@ app.post('/resident/pay', upload.single('receipt'), (req, res) => {
         WHERE id = ?
     `, [phoneNumber, receiptPath, billId], function(err) {
         if (err) return res.status(500).json({ error: "Database error" });
-        
-        // NEW: Fire the Telegram notification!
-        sendTelegramMessage(`✅ <b>Payment Received</b>\nFlat <b>${flatNumber}</b> has just uploaded their payment receipt.`);
-
         res.json({ message: "✅ Payment submitted successfully! The Admin will review your receipt." });
     });
-});
-
-// ==========================================
-// --- SCHEDULED TASKS (CRON JOBS) ---
-// ==========================================
-
-// Run every morning at 7:00 AM IST
-cron.schedule('0 7 * * *', () => {
-    const date = new Date();
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
-
-    db.all(`
-        SELECT f.flat_number 
-        FROM monthly_bills b
-        JOIN flats f ON b.flat_id = f.id
-        WHERE b.billing_month = ? AND b.billing_year = ? AND b.status != 'Paid' AND f.is_vacant = 0
-        ORDER BY f.flat_number ASC
-    `, [month, year], (err, rows) => {
-        if (err) return;
-        
-        // If everyone paid, don't send a message!
-        if (!rows || rows.length === 0) {
-            sendTelegramMessage(`🎉 <b>Daily Update</b>\nAll occupied flats have paid for ${month}/${year}!`);
-            return;
-        }
-        
-        // Format the list of flats
-        const unpaidFlats = rows.map(r => r.flat_number).join(', ');
-        
-        const message = `🔔 <b>Daily Payment Reminder</b>\nMonth: ${month}/${year}\n\nThe following occupied flats are pending payment:\n<b>${unpaidFlats}</b>\n\n<i>(Admin: Copy this list to the WhatsApp group)</i>`;
-        
-        sendTelegramMessage(message);
-    });
-}, {
-    scheduled: true,
-    timezone: "Asia/Kolkata"
 });
 
 app.listen(PORT, () => {
