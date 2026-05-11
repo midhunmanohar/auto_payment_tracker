@@ -128,7 +128,7 @@ export default function BillingDashboard() {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
                 <form onSubmit={login} className="p-8 bg-white rounded-lg shadow-md border">
-                    <h2 className="text-2xl font-bold mb-4 text-black">Billing Dashboard Login</h2>
+                    <h2 className="text-2xl font-bold mb-4 text-black">Admin Login</h2>
                     {error && <p className="text-red-500 mb-4">{error}</p>}
                     <input
                         type="password"
