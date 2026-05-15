@@ -1,10 +1,10 @@
 # Ignore Database Files
-#database_data/
-#*.sqlite
-#*.db
+database_data/
+*.sqlite
+*.db
 
 # Ignore Secrets
-#.env
+.env
 
 # Ignore Node.js / Next.js Build Files
 node_modules/
