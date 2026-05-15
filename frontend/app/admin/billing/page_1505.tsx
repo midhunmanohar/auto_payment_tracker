@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export default function BillingDashboard() {
     const [password, setPassword] = useState("");
@@ -14,47 +14,17 @@ export default function BillingDashboard() {
     
     const [receiptViewer, setReceiptViewer] = useState<string | null>(null);
 
-// Auto-login on page load if password is saved
-    useEffect(() => {
-        const savedPassword = localStorage.getItem("adminPassword");
-        if (savedPassword) {
-            setPassword(savedPassword);
-            silentLogin(savedPassword);
-        }
-    }, []);
-
-    const silentLogin = async (savedPass: string) => {
-        const res = await fetch('/api/admin/settings', { headers: { 'x-admin-password': savedPass } });
-        if (res.ok) {
-            setIsLoggedIn(true);
-            const data = await res.json();
-            setMaintenanceFee(data.base_maintenance_fee || 2500);
-            fetchBills(month, year, savedPass);
-        } else {
-            // If password was changed on backend, clear the invalid one
-            localStorage.removeItem("adminPassword");
-        }
-    };
-
     const login = async (e: any) => {
         e.preventDefault();
         const res = await fetch('/api/admin/settings', { headers: { 'x-admin-password': password } });
         if (res.ok) {
             setIsLoggedIn(true);
-            localStorage.setItem("adminPassword", password); // <-- Saves it to browser!
             const data = await res.json();
             setMaintenanceFee(data.base_maintenance_fee || 2500);
             fetchBills(month, year, password);
         } else {
             setError("Incorrect Password");
         }
-    };
-
-    const logout = () => {
-        localStorage.removeItem("adminPassword"); // Clear browser memory
-        setIsLoggedIn(false);
-        setPassword("");
-        setBills([]);
     };
 
     const updateSettings = async () => {
@@ -175,12 +145,7 @@ export default function BillingDashboard() {
 
     return (
         <div className="p-8 max-w-7xl mx-auto text-black relative">
-           <div className="flex justify-between items-center mb-8">
-             <h1 className="text-3xl font-bold">Society True Billing System</h1>
-             <button onClick={logout} className="bg-red-100 text-red-700 px-4 py-2 rounded font-bold hover:bg-red-200 border border-red-200 shadow-sm transition-colors">
-               Logout
-             </button>
-          </div>
+            <h1 className="text-3xl font-bold mb-8">Society True Billing System</h1>
 
             <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500 mb-8">
                 <h2 className="text-xl font-bold mb-4">1. Global Settings</h2>

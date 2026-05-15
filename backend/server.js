@@ -477,7 +477,7 @@ cron.schedule('0 7 * * *', () => {
         // Format the list of flats
         const unpaidFlats = rows.map(r => r.flat_number).join(', ');
         
-        const message = `🔔 <b>Daily Payment Reminder</b>\nMonth: ${month}/${year}\n\nThe following occupied flats are pending payment:\n<b>${unpaidFlats}</b>\n\n<i>(Admin: Copy this list to the WhatsApp group)</i>`;
+        const message = `🔔 <b>Daily Payment Reminder</b>\nMonth: ${month}/${year}\n\nThe following occupied flats are pending payment:\n<b>${unpaidFlats}</b>`;
         
         sendTelegramMessage(message);
     });
