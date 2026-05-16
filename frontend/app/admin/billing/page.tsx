@@ -1,5 +1,69 @@
 "use client";
+import Image from "next/image";
 import { useState, useEffect } from "react";
+import type { Dispatch, FormEvent, SetStateAction } from "react";
+
+type BillingBill = {
+    id: number;
+    flat_number: string;
+    is_vacant: number | boolean;
+    maintenance_due: number;
+    water_due: number;
+    total_due: number;
+    status: string;
+    phone_number: string | null;
+    receipt_image_path: string | null;
+};
+
+type BillSettingsResponse = {
+    base_maintenance_fee?: number;
+};
+
+type LoadSessionArgs = {
+    password: string;
+    month: number;
+    year: number;
+    setIsLoggedIn: Dispatch<SetStateAction<boolean>>;
+    setMaintenanceFee: Dispatch<SetStateAction<number>>;
+    setBills: Dispatch<SetStateAction<BillingBill[]>>;
+};
+
+async function fetchBillsForPeriod(month: number, year: number, password: string, setBills: Dispatch<SetStateAction<BillingBill[]>>) {
+    const res = await fetch(`/api/admin/monthly-bills?month=${month}&year=${year}`, {
+        headers: { 'x-admin-password': password }
+    });
+
+    if (!res.ok) {
+        return false;
+    }
+
+    const data: BillingBill[] = await res.json();
+    setBills(data);
+    return true;
+}
+
+async function loadAdminSession({
+    password,
+    month,
+    year,
+    setIsLoggedIn,
+    setMaintenanceFee,
+    setBills,
+}: LoadSessionArgs) {
+    const res = await fetch('/api/admin/settings', { headers: { 'x-admin-password': password } });
+
+    if (!res.ok) {
+        return false;
+    }
+
+    setIsLoggedIn(true);
+
+    const data: BillSettingsResponse = await res.json();
+    setMaintenanceFee(Number(data.base_maintenance_fee) || 2500);
+
+    await fetchBillsForPeriod(month, year, password, setBills);
+    return true;
+}
 
 export default function BillingDashboard() {
     const [password, setPassword] = useState("");
@@ -9,42 +73,47 @@ export default function BillingDashboard() {
     const [maintenanceFee, setMaintenanceFee] = useState(2500);
     const [month, setMonth] = useState(new Date().getMonth() + 1);
     const [year, setYear] = useState(new Date().getFullYear());
-    const [bills, setBills] = useState<any[]>([]);
+    const [bills, setBills] = useState<BillingBill[]>([]);
     const [loading, setLoading] = useState(false);
     
     const [receiptViewer, setReceiptViewer] = useState<string | null>(null);
 
-// Auto-login on page load if password is saved
     useEffect(() => {
         const savedPassword = localStorage.getItem("adminPassword");
         if (savedPassword) {
             setPassword(savedPassword);
-            silentLogin(savedPassword);
+            void (async () => {
+                const success = await loadAdminSession({
+                    password: savedPassword,
+                    month: new Date().getMonth() + 1,
+                    year: new Date().getFullYear(),
+                    setIsLoggedIn,
+                    setMaintenanceFee,
+                    setBills,
+                });
+
+                if (!success) {
+                    localStorage.removeItem("adminPassword");
+                }
+            })();
         }
     }, []);
 
-    const silentLogin = async (savedPass: string) => {
-        const res = await fetch('/api/admin/settings', { headers: { 'x-admin-password': savedPass } });
-        if (res.ok) {
-            setIsLoggedIn(true);
-            const data = await res.json();
-            setMaintenanceFee(data.base_maintenance_fee || 2500);
-            fetchBills(month, year, savedPass);
-        } else {
-            // If password was changed on backend, clear the invalid one
-            localStorage.removeItem("adminPassword");
-        }
-    };
-
-    const login = async (e: any) => {
+    const login = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        const res = await fetch('/api/admin/settings', { headers: { 'x-admin-password': password } });
-        if (res.ok) {
-            setIsLoggedIn(true);
+
+        const success = await loadAdminSession({
+            password,
+            month,
+            year,
+            setIsLoggedIn,
+            setMaintenanceFee,
+            setBills,
+        });
+
+        if (success) {
             localStorage.setItem("adminPassword", password); // <-- Saves it to browser!
-            const data = await res.json();
-            setMaintenanceFee(data.base_maintenance_fee || 2500);
-            fetchBills(month, year, password);
+            setError("");
         } else {
             setError("Incorrect Password");
         }
@@ -54,6 +123,7 @@ export default function BillingDashboard() {
         localStorage.removeItem("adminPassword"); // Clear browser memory
         setIsLoggedIn(false);
         setPassword("");
+        setError("");
         setBills([]);
     };
 
@@ -68,34 +138,34 @@ export default function BillingDashboard() {
 
     const generateBills = async () => {
         setLoading(true);
-        await fetch('/api/admin/generate-bills', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-            body: JSON.stringify({ month, year })
-        });
-        await fetchBills(month, year, password);
-        setLoading(false);
-        alert(`Bills successfully generated for ${month}/${year}!`);
-    };
-
-    const fetchBills = async (m: number, y: number, pass: string) => {
-        const res = await fetch(`/api/admin/monthly-bills?month=${m}&year=${y}`, {
-            headers: { 'x-admin-password': pass }
-        });
-        if (res.ok) {
-            const data = await res.json();
-            setBills(data);
+        try {
+            await fetch('/api/admin/generate-bills', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+                body: JSON.stringify({ month, year })
+            });
+            await fetchBillsForPeriod(month, year, password, setBills);
+            alert(`Bills successfully generated for ${month}/${year}!`);
+        } finally {
+            setLoading(false);
         }
     };
 
     const handleWaterChange = (index: number, value: string) => {
-        const newBills = [...bills];
-        newBills[index].water_due = value;
-        setBills(newBills);
+        const nextWaterDue = value === "" ? 0 : Number(value);
+        setBills((currentBills) =>
+            currentBills.map((bill, billIndex) =>
+                billIndex === index
+                    ? { ...bill, water_due: Number.isNaN(nextWaterDue) ? 0 : nextWaterDue }
+                    : bill
+            )
+        );
     };
 
     const saveWaterBill = async (index: number) => {
         const bill = bills[index];
+        if (!bill) return;
+
         const total = Number(bill.maintenance_due) + Number(bill.water_due);
         await fetch(`/api/admin/monthly-bills/${bill.id}`, {
             method: 'PUT',
@@ -103,12 +173,14 @@ export default function BillingDashboard() {
             body: JSON.stringify({ water_due: Number(bill.water_due), total_due: total })
         });
         alert(`Saved water bill for Flat ${bill.flat_number}`);
-        fetchBills(month, year, password);
+        await fetchBillsForPeriod(month, year, password, setBills);
     };
 
     // NEW: Function to toggle Vacancy directly from the table
     const toggleVacancy = async (index: number) => {
         const bill = bills[index];
+        if (!bill) return;
+
         const newStatus = bill.is_vacant ? 0 : 1; // Flip the status
         
         await fetch(`/api/admin/flats/${bill.flat_number}/vacancy`, {
@@ -117,9 +189,11 @@ export default function BillingDashboard() {
             body: JSON.stringify({ is_vacant: newStatus })
         });
 
-        const newBills = [...bills];
-        newBills[index].is_vacant = newStatus;
-        setBills(newBills);
+        setBills((currentBills) =>
+            currentBills.map((currentBill, billIndex) =>
+                billIndex === index ? { ...currentBill, is_vacant: newStatus } : currentBill
+            )
+        );
     };
 
     // UPDATED: Added Billing Period and Occupancy Status to the CSV Output
@@ -206,7 +280,7 @@ export default function BillingDashboard() {
                     <button onClick={generateBills} disabled={loading} className="bg-purple-600 text-white px-6 py-2 rounded hover:bg-purple-700 disabled:opacity-50">
                         {loading ? "Generating..." : "Generate Blank Bills"}
                     </button>
-                    <button onClick={() => fetchBills(month, year, password)} className="bg-gray-200 text-black px-4 py-2 rounded hover:bg-gray-300">
+                    <button onClick={() => void fetchBillsForPeriod(month, year, password, setBills)} className="bg-gray-200 text-black px-4 py-2 rounded hover:bg-gray-300">
                         View Month
                     </button>
                 </div>
@@ -306,8 +380,15 @@ export default function BillingDashboard() {
                                 &times;
                             </button>
                         </div>
-                        <div className="bg-gray-100 flex items-center justify-center rounded overflow-hidden">
-                            <img src={`/api${receiptViewer}`} alt="Resident Uploaded Receipt" className="w-full h-auto max-h-[60vh] object-contain" />
+                        <div className="relative h-[60vh] w-full bg-gray-100 rounded overflow-hidden">
+                            <Image
+                                src={`/api${receiptViewer}`}
+                                alt="Resident Uploaded Receipt"
+                                fill
+                                sizes="(max-width: 1024px) 100vw, 768px"
+                                className="object-contain"
+                                unoptimized
+                            />
                         </div>
                         <div className="mt-4 text-center">
                             <a href={`/api${receiptViewer}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">

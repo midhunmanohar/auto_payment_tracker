@@ -1,9 +1,27 @@
 "use client";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+
+type ApiResponse = {
+    error?: string;
+    details?: string;
+    message?: string;
+    [key: string]: unknown;
+};
+
+type ResidentBill = ApiResponse & {
+    id: number;
+    flat_number: string;
+    billing_month: number;
+    billing_year: number;
+    maintenance_due: number;
+    water_due: number;
+    total_due: number;
+    status?: string;
+};
 
 export default function ResidentPortal() {
     const [flatNumber, setFlatNumber] = useState("");
-    const [bill, setBill] = useState<any>(null);
+    const [bill, setBill] = useState<ResidentBill | null>(null);
     const [phoneNumber, setPhoneNumber] = useState("");
     const [receipt, setReceipt] = useState<File | null>(null);
     
@@ -11,29 +29,63 @@ export default function ResidentPortal() {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
-    const fetchBill = async (e: any) => {
+    const normalizeFlatNumber = (value: string) => {
+        const trimmed = value.trim();
+
+        if (/^\d{1,3}$/.test(trimmed)) {
+            return trimmed.padStart(3, "0");
+        }
+
+        return trimmed;
+    };
+
+    const readApiResponse = async (res: Response): Promise<ApiResponse> => {
+        const rawBody = await res.text();
+
+        if (!rawBody) {
+            return {};
+        }
+
+        try {
+            return JSON.parse(rawBody) as ApiResponse;
+        } catch {
+            return { error: rawBody };
+        }
+    };
+
+    const fetchBill = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setError("");
         setSuccess("");
+
+        const normalizedFlatNumber = normalizeFlatNumber(flatNumber);
+        if (!normalizedFlatNumber) {
+            setError("Please enter your flat number.");
+            return;
+        }
+
         setLoading(true);
 
         try {
-            const res = await fetch(`/api/resident/bill/${flatNumber}`);
-            const data = await res.json();
+            const res = await fetch(`/api/resident/bill/${encodeURIComponent(normalizedFlatNumber)}`);
+            const data = await readApiResponse(res);
 
             if (res.ok) {
-                setBill(data);
+                setBill(data as ResidentBill);
+                setFlatNumber(normalizedFlatNumber);
             } else {
-                setError(data.error);
+                setError(data.error || data.details || `Unable to load the bill for Flat ${normalizedFlatNumber}.`);
                 setBill(null);
             }
         } catch (err) {
-            setError("Failed to connect to the server.");
+            const message = err instanceof Error ? err.message : "Unknown network error";
+            setError(`Failed to connect to the server. ${message}`);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
-    const submitPayment = async (e: any) => {
+    const submitPayment = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!receipt) {
             setError("Please attach a screenshot of your payment receipt.");
@@ -48,7 +100,7 @@ export default function ResidentPortal() {
         setError("");
 
         const formData = new FormData();
-        formData.append('billId', bill.id);
+        formData.append('billId', String(bill.id));
         formData.append('flatNumber', flatNumber);
         formData.append('phoneNumber', phoneNumber);
         formData.append('receipt', receipt); 
@@ -58,21 +110,23 @@ export default function ResidentPortal() {
                 method: 'POST',
                 body: formData 
             });
-            const data = await res.json();
+            const data = await readApiResponse(res);
 
             if (res.ok) {
-                setSuccess(data.message);
+                setSuccess(data.message || "✅ Payment submitted successfully! The Admin will review your receipt.");
                 setBill(null); 
                 setFlatNumber(""); 
                 setReceipt(null); // Clear the image
                 setPhoneNumber(""); // Clear the phone
             } else {
-                setError(data.error);
+                setError(data.error || data.details || "Failed to submit payment.");
             }
         } catch (err) {
-            setError("Failed to submit payment.");
+            const message = err instanceof Error ? err.message : "Unknown network error";
+            setError(`Failed to submit payment. ${message}`);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     return (
@@ -89,11 +143,15 @@ export default function ResidentPortal() {
                 {!bill && !success && (
                     <form onSubmit={fetchBill} className="flex flex-col gap-4">
                         <label className="font-semibold text-gray-700">Enter Your Flat Number:</label>
+                        <p className="text-xs text-gray-500 -mt-2">Use the 3-digit flat number, for example 001, 101, or 304.</p>
                         <input 
                             type="text" 
-                            placeholder="e.g. 304" 
+                            placeholder="e.g. 001, 101, 304" 
                             value={flatNumber} 
                             onChange={(e) => setFlatNumber(e.target.value)}
+                            inputMode="numeric"
+                            maxLength={3}
+                            autoComplete="off"
                             className="border p-3 rounded-lg text-lg text-center bg-white"
                             required
                         />
@@ -139,8 +197,11 @@ export default function ResidentPortal() {
                                 {/* UPDATED: Payment Instructions */}
                                 <div className="p-4 bg-gray-100 rounded-lg border">
                                     <p className="font-bold text-center text-gray-800 mb-3 border-b pb-2">Pay via UPI or Account Transfer</p>
-                                    <div className="text-sm text-gray-700 space-y-1">
-                                        <p><span className="font-semibold w-24 inline-block">UPI ID:</span> MSSRIVENKATADRICASTLEASSOCIATION.eazypay@icici</p>
+                                    <div className="text-sm text-gray-700 space-y-2">
+                                        <div className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+                                            <span className="font-semibold sm:w-24 sm:flex-shrink-0">UPI ID:</span>
+                                            <span className="min-w-0 break-all">MSSRIVENKATADRICASTLEASSOCIATION.eazypay@icici</span>
+                                        </div>
                                         <p><span className="font-semibold w-24 inline-block">A/C Number:</span> 722605000718</p>
                                         <p><span className="font-semibold w-24 inline-block">IFSC Code:</span> ICIC0007226</p>
                                         <p><span className="font-semibold w-24 inline-block">Bank:</span> ICICI Bank</p>

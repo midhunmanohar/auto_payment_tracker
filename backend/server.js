@@ -57,6 +57,17 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+const normalizeFlatNumber = (value) => {
+    const trimmed = String(value ?? "").trim();
+
+    // Keep the lookup forgiving for common inputs like 1, 01, or 001.
+    if (/^\d{1,3}$/.test(trimmed)) {
+        return trimmed.padStart(3, "0");
+    }
+
+    return trimmed;
+};
+
 // Allow the frontend to view these saved images later
 app.use('/receipts', express.static(receiptsDir));
 
@@ -152,11 +163,15 @@ app.get('/', (req, res) => {
 
 // --- UPDATED API ROUTE: Save Payment (Strict Validation) ---
 app.post('/payments', (req, res) => {
-    const { flatNumber, maintenancePaid, waterPaid, waterAmount, paymentMethod } = req.body;
+    const flatNumber = normalizeFlatNumber(req.body.flatNumber);
+    const { maintenancePaid, waterPaid, waterAmount, paymentMethod } = req.body;
     
     // NEW LOCK: Prevent empty submissions
     if (!maintenancePaid && !waterPaid) {
         return res.status(400).json({ error: "Please mark at least Maintenance or Water Bill as paid." });
+    }
+    if (!flatNumber) {
+        return res.status(400).json({ error: "Flat number is required." });
     }
     
     const date = new Date();
@@ -240,7 +255,8 @@ app.post('/admin/flats/status', (req, res) => {
     const providedPassword = req.headers['x-admin-password'];
     if (providedPassword !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
 
-    const { flatNumber, status } = req.body;
+    const flatNumber = normalizeFlatNumber(req.body.flatNumber);
+    const { status } = req.body;
     
     db.run(`UPDATE flats SET status = ? WHERE flat_number = ?`, [status, flatNumber], function(err) {
         if (err) return res.status(500).json({ error: "Database error." });
@@ -257,7 +273,8 @@ app.get('/admin/flats/vacant', (req, res) => {
 // NEW ROUTE: Toggle Association Member Status
 app.post('/admin/flats/assoc', (req, res) => {
     if (req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ error: "Unauthorized" });
-    const { flatNumber, isAssoc } = req.body;
+    const flatNumber = normalizeFlatNumber(req.body.flatNumber);
+    const { isAssoc } = req.body;
     db.run(`UPDATE flats SET is_assoc_member = ? WHERE flat_number = ?`, [isAssoc ? 1 : 0, flatNumber], (err) => {
         if (err) return res.status(500).json({ error: "Database error." });
         res.json({ message: "Association status updated" });
@@ -390,7 +407,8 @@ app.put('/admin/monthly-bills/:id', (req, res) => {
 // Toggle Vacancy Status for a Flat
 app.put('/admin/flats/:flatNumber/vacancy', (req, res) => {
     const { is_vacant } = req.body;
-    db.run(`UPDATE flats SET is_vacant = ? WHERE flat_number = ?`, [is_vacant ? 1 : 0, req.params.flatNumber], function(err) {
+    const flatNumber = normalizeFlatNumber(req.params.flatNumber);
+    db.run(`UPDATE flats SET is_vacant = ? WHERE flat_number = ?`, [is_vacant ? 1 : 0, flatNumber], function(err) {
         if (err) return res.status(500).json({ error: "Database error" });
         res.json({ message: "Vacancy updated" });
     });
@@ -401,30 +419,60 @@ app.put('/admin/flats/:flatNumber/vacancy', (req, res) => {
 
 // 1. Fetch a flat's bill for the current month
 app.get('/resident/bill/:flat', (req, res) => {
-    const flatNumber = req.params.flat;
+    const flatNumber = normalizeFlatNumber(req.params.flat);
     const date = new Date();
     const month = date.getMonth() + 1;
     const year = date.getFullYear();
 
     // Step 1: Safely find the Flat ID first (No JOINs!)
+    if (!flatNumber) {
+        return res.status(404).json({ error: "Invalid Flat Number" });
+    }
+
     db.get(`SELECT id, flat_number FROM flats WHERE flat_number = ?`, [flatNumber], (err, flat) => {
         if (err) return res.status(500).json({ error: "Database error" });
         if (!flat) return res.status(404).json({ error: "Invalid Flat Number" });
 
-        // Step 2: Use db.all to fetch the bill to avoid the sqlite3 memory crash
-        db.all(`
-            SELECT * FROM monthly_bills 
-            WHERE flat_id = ? AND billing_month = ? AND billing_year = ?
-        `, [flat.id, month, year], (err, rows) => {
-            if (err) return res.status(500).json({ error: "Database error" });
-            
-            const bill = rows.length > 0 ? rows[0] : null;
-            if (!bill) return res.status(404).json({ error: "No bill generated for this month yet. Please check back later." });
-            
-            // Attach the flat number so the frontend can display it cleanly
-            bill.flat_number = flat.flat_number;
-            res.json(bill);
-        });
+        const fetchBill = () => {
+            db.get(`
+                SELECT * FROM monthly_bills 
+                WHERE flat_id = ? AND billing_month = ? AND billing_year = ?
+            `, [flat.id, month, year], (billErr, bill) => {
+                if (billErr) return res.status(500).json({ error: "Database error" });
+                if (bill) {
+                    bill.flat_number = flat.flat_number;
+                    return res.json(bill);
+                }
+
+                db.get(`SELECT base_maintenance_fee FROM settings WHERE id = 1`, [], (settingErr, setting) => {
+                    if (settingErr) return res.status(500).json({ error: "Database error" });
+
+                    const fee = Number(setting?.base_maintenance_fee) || 2500;
+                    db.run(`
+                        INSERT INTO monthly_bills 
+                        (flat_id, billing_month, billing_year, maintenance_due, total_due) 
+                        VALUES (?, ?, ?, ?, ?)
+                    `, [flat.id, month, year, fee, fee], function(insertErr) {
+                        if (insertErr && !insertErr.message.includes('UNIQUE constraint failed')) {
+                            return res.status(500).json({ error: "Database error" });
+                        }
+
+                        db.get(`
+                            SELECT * FROM monthly_bills 
+                            WHERE flat_id = ? AND billing_month = ? AND billing_year = ?
+                        `, [flat.id, month, year], (finalErr, createdBill) => {
+                            if (finalErr) return res.status(500).json({ error: "Database error" });
+                            if (!createdBill) return res.status(404).json({ error: "No bill generated for this month yet. Please check back later." });
+
+                            createdBill.flat_number = flat.flat_number;
+                            res.json(createdBill);
+                        });
+                    });
+                });
+            });
+        };
+
+        fetchBill();
     });
 });
 
